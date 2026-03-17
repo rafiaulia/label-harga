@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Samoro — Generator Label Harga</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="screen">
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header-logo" id="headerLogoWrap">
+      <!-- logo injected by JS -->
+    </div>
+    <div class="header-title">
+      Generator Label Harga Thermal
+      <strong>SAMORO</strong>
+    </div>
+  </header>
+
+  <!-- TWO-COLUMN FORM + LIST -->
+  <div class="two-col">
+
+    <!-- FORM PANEL -->
+    <div class="panel">
+      <div class="panel-head">✦ Input Produk Baru</div>
+      <div class="panel-body">
+        <div class="field">
+          <label>Headline 1 — Nama Produk</label>
+          <input type="text" id="inp-headline1" placeholder="contoh: MINYAK GORENG" maxlength="40" />
+        </div>
+        <div class="field">
+          <label>Headline 2 — Merk &amp; Spesifikasi</label>
+          <input type="text" id="inp-headline2" placeholder="contoh: ROSEBRAND 1 L" maxlength="40" />
+        </div>
+        <div class="field">
+          <label>Harga (Rp)</label>
+          <input type="number" id="inp-harga" placeholder="contoh: 12000" min="0" />
+        </div>
+        <button class="btn btn-primary" id="btn-tambah" onclick="tambahProduk()">
+          + Tambah Produk
+        </button>
+        <div class="counter">
+          Produk: <span id="counter-badge">0</span> / 5
+        </div>
+      </div>
+    </div>
+
+    <!-- LIST PANEL -->
+    <div class="panel">
+      <div class="panel-head">☰ Daftar Produk</div>
+      <div id="product-list" class="product-list">
+        <div class="empty-state" id="empty-state">Belum ada produk ditambahkan.</div>
+      </div>
+    </div>
+
+  </div><!-- /two-col -->
+
+  <!-- ACTION BAR -->
+  <div class="action-bar">
+    <button class="btn-process" id="btn-proses" onclick="prosesCetak()" disabled>
+      ▶ Proses &amp; Generate Nota
+    </button>
+    <button class="btn-print" id="btn-cetak" onclick="window.print()" style="display:none;">
+      🖨 Cetak
+    </button>
+    <button class="btn-print" id="btn-reset-nota" onclick="resetNota()" style="display:none;">
+      ✕ Hapus Nota
+    </button>
+  </div>
+
+  <!-- NOTA PREVIEW -->
+  <section class="nota-section" id="nota-section">
+    <div class="nota-section-head">
+      <h2>Preview Nota — Siap Cetak</h2>
+    </div>
+    <div class="nota-wrap" id="nota-wrap">
+      <!-- label-tag elements injected here -->
+    </div>
+  </section>
+
+</div><!-- /screen -->
+
+<!-- JS dipanggil di akhir body agar DOM sudah siap -->
+<script src="app.js"></script>
+</body>
+</html>
