@@ -379,7 +379,7 @@ body {
 }
 .label-headline1 {
   font-family: 'Bebas Neue', var(--font-label);
-  font-size: 60px;
+  font-size: 50px;
   font-weight: 900;
   line-height: 1.1;
   text-transform: uppercase;
@@ -390,7 +390,7 @@ body {
 }
 .label-headline2 {
   font-family: 'Bebas Neue', var(--font-label);
-  font-size: 60px;
+  font-size: 50px;
   font-weight: 700;
   line-height: 1.2;
   text-transform: uppercase;
