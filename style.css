@@ -345,8 +345,8 @@ body {
   padding: 20px;
 }
 .label-logo {
-  width: 90px;
-  height: 90px;
+  width: 170px;
+  height: 170px;
   object-fit: contain;
 }
 .label-logo-fallback {
@@ -378,18 +378,19 @@ body {
   border-bottom: var(--divider);
 }
 .label-headline1 {
-  font-family: var(--font-label);
-  font-size: 32px;
+  font-family: 'Bebas Neue', var(--font-label);
+  font-size: 60px;
   font-weight: 900;
   line-height: 1.1;
   text-transform: uppercase;
   letter-spacing: 0.02em;
   color: var(--black);
   word-break: break-word;
+  letter-spacing: 0.04em;
 }
 .label-headline2 {
-  font-family: var(--font-label);
-  font-size: 26px;
+  font-family: 'Bebas Neue', var(--font-label);
+  font-size: 60px;
   font-weight: 700;
   line-height: 1.2;
   text-transform: uppercase;
@@ -397,6 +398,7 @@ body {
   color: var(--black);
   margin-top: 4px;
   word-break: break-word;
+  letter-spacing: 0.04em;
 }
 
 /* RIGHT BOTTOM: price */

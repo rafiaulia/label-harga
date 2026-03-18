@@ -3,7 +3,7 @@
 ============================================= */
 
 const STORAGE_KEY  = 'samoro_products';
-const MAX_PRODUCTS = 5;
+const MAX_PRODUCTS = 10;
 const LOGO_IMG_SRC = 'logo.png';
 
 /* ---- Logo SVG inline (fallback jika logo.png tidak ditemukan) ---- */
@@ -203,7 +203,7 @@ function buildLabel(p) {
 
   const storeName = document.createElement('div');
   storeName.className   = 'label-store-name';
-  storeName.textContent = 'samoro';
+  storeName.textContent = '';
   left.appendChild(storeName);
 
   /* --- KANAN: kolom info --- */
