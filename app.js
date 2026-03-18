@@ -61,18 +61,25 @@ function saveProducts(arr) {
 ============================================= */
 
 function buildLogoImg(cls) {
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'width:400px;height:100px;overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;';
+
   const img     = document.createElement('img');
   img.src       = LOGO_IMG_SRC;
   img.className = cls;
   img.alt       = 'Samoro';
+  img.style.cssText = 'width:240px;height:60px;object-fit:contain;';
+  img.width     = 240;
+  img.height    = 60;
   img.onerror   = function () {
     const div = document.createElement('div');
     div.innerHTML = LOGO_SVG;
     this.replaceWith(div.firstChild);
   };
-  return img;
-}
 
+  wrapper.appendChild(img);
+  return wrapper;
+}
 function renderHeaderLogo() {
   const wrap    = document.getElementById('headerLogoWrap');
   wrap.innerHTML = '';

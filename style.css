@@ -408,7 +408,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 0px;
   border-top: var(--divider);
   padding: 0 32px;
 }
