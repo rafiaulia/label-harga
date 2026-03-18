@@ -345,8 +345,8 @@ body {
   padding: 20px;
 }
 .label-logo {
-  width: 150px;
-  height: 150px;
+  width: 90px;
+  height: 90px;
   object-fit: contain;
 }
 .label-logo-fallback {

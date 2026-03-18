@@ -203,7 +203,7 @@ function buildLabel(p) {
 
   const storeName = document.createElement('div');
   storeName.className   = 'label-store-name';
-  storeName.textContent = '';
+  storeName.textContent = 'samoro';
   left.appendChild(storeName);
 
   /* --- KANAN: kolom info --- */
