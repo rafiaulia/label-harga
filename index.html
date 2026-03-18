@@ -5,18 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Samoro — Generator Label Harga</title>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=3" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Manrope:wght@800&display=swap" rel="stylesheet" />
 </head>
 <body>
 <div class="screen">
 
   <!-- HEADER -->
   <header class="header">
-    <div class="header-logo" id="headerLogoWrap">
-      <!-- logo injected by JS -->
-    </div>
+    <div class="header-logo" id="headerLogoWrap"></div>
     <div class="header-title">
       Generator Label Harga Thermal
       <strong>SAMORO</strong>
@@ -31,16 +30,13 @@
       <div class="panel-head">✦ Input Produk Baru</div>
       <div class="panel-body">
         <div class="field">
-          <label>Headline 1 — Nama Produk</label>
-          <input type="text" id="inp-headline1" placeholder="contoh: MINYAK GORENG" maxlength="40" />
+          <label>Nama Produk</label>
+          <input type="text" id="inp-headline1" placeholder="contoh: PEPSODENT" maxlength="40" />
         </div>
-        <div class="field">
-          <label>Headline 2 — Merk &amp; Spesifikasi</label>
-          <input type="text" id="inp-headline2" placeholder="contoh: ROSEBRAND 1 L" maxlength="40" />
-        </div>
+        
         <div class="field">
           <label>Harga (Rp)</label>
-          <input type="number" id="inp-harga" placeholder="contoh: 12000" min="0" />
+          <input type="number" id="inp-harga" placeholder="contoh: 38000" min="0" />
         </div>
         <button class="btn btn-primary" id="btn-tambah" onclick="tambahProduk()">
           + Tambah Produk
@@ -59,22 +55,22 @@
       </div>
     </div>
 
-  </div><!-- /two-col -->
+  </div>
 
   <!-- ACTION BAR -->
   <div class="action-bar">
     <button class="btn-process" id="btn-proses" onclick="prosesCetak()" disabled>
-      ▶ Proses &amp; Generate Nota
+      ▶ Proses &amp; Generate
     </button>
     <button class="btn-print" id="btn-cetak" onclick="window.print()" style="display:none;">
       🖨 Cetak
     </button>
-    <button class="btn-print" id="btn-reset-nota" onclick="resetNota()" style="display:none;">
-      ✕ Hapus Nota
+    <button class="btn-print" id="btn-export" onclick="exportAsPNG()" style="display:none;">
+      📷 Simpan PNG
     </button>
-    <button class="btn-print" onclick="exportAsPNG()">
-  📷 Simpan sebagai Gambar
-</button>
+    <button class="btn-print" id="btn-reset-nota" onclick="resetNota()" style="display:none;">
+      ✕ Hapus
+    </button>
   </div>
 
   <!-- NOTA PREVIEW -->
@@ -83,15 +79,12 @@
       <h2>Preview Nota — Siap Cetak</h2>
     </div>
     <div class="nota-scroll-wrap">
-    <div class="nota-wrap" id="nota-wrap">
-      <!-- label-tag elements injected here -->
-    </div>
+      <div class="nota-wrap" id="nota-wrap"></div>
     </div>
   </section>
 
-</div><!-- /screen -->
+</div>
 
-<!-- JS dipanggil di akhir body agar DOM sudah siap -->
-<script src="app.js"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>

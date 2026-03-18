@@ -8,14 +8,12 @@
   --gray-200: #e8e8e8;
   --gray-400: #999;
   --gray-600: #555;
-  --accent: #0a0a0a;
   --label-w: 580px;
   --label-h: 350px;
-  --col-left: 174px;  /* 30% of 580 */
-  --col-right: 406px; /* 70% of 580 */
   --divider: 2px solid var(--black);
   --font-ui: 'DM Sans', 'Segoe UI', sans-serif;
   --font-label: 'Arial Black', 'Arial Bold', Arial, sans-serif;
+  --font-display: 'Bebas Neue', 'Arial Black', Arial, sans-serif;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -58,10 +56,6 @@ body {
   height: 32px;
   object-fit: contain;
   filter: invert(1);
-}
-.header-logo-fallback {
-  width: 28px;
-  height: 28px;
 }
 .header-title {
   font-size: 11px;
@@ -175,7 +169,6 @@ body {
 }
 .btn-danger:hover { background: #cc2222; color: var(--white); }
 
-/* counter badge */
 .counter {
   display: inline-block;
   font-size: 10px;
@@ -312,115 +305,131 @@ body {
 }
 
 /* =============================================
-   LABEL (the actual price tag visual)
+   NOTA SCROLL WRAP (preview HP)
 ============================================= */
+.nota-scroll-wrap {
+  width: 100%;
+  overflow: hidden;
+}
+
 .nota-wrap {
   display: inline-block;
   background: var(--white);
   border: 2px solid var(--black);
+  transform-origin: top left;
 }
 
+/* Scale preview di layar kecil — dihitung JS */
+
+/* =============================================
+   LABEL — LAYOUT BARU: ATAS / TENGAH / BAWAH
+   580 × 350px
+   ┌─────────────────────────────┐
+   │  NAMA PRODUK + SPESIFIKASI  │  ~90px
+   ├─────────────────────────────┤
+   │        Rp  38.000           │  ~190px
+   ├─────────────────────────────┤
+   │      🅢  samoro             │  ~70px
+   └─────────────────────────────┘
+============================================= */
 .label-tag {
-  width: var(--label-w);
-  height: var(--label-h);
+  width: var(--label-w);       /* 580px */
+  height: var(--label-h);      /* 350px */
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   background: var(--white);
   border-bottom: 2px solid var(--black);
   overflow: hidden;
-  position: relative;
 }
 .label-tag:last-child { border-bottom: none; }
 
-/* LEFT: logo column */
-.label-left {
-  width: var(--col-left);
-  flex-shrink: 0;
-  border-right: var(--divider);
+/* ── ATAS: nama produk ── */
+.label-name-area {
+  height: 90px;
   display: flex;
   flex-direction: column;
+  justify-content: center;
+  padding: 0 32px;
+  border-bottom: var(--divider);
+   align-items: center;
+}
+.label-headline1 {
+  font-family: 'Manrope', var(--font-label);
+  font-weight: 800;
+  font-size: 40px;
+  
+  line-height: 1;
+  
+  text-transform: uppercase;
+  color: var(--black);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+
+
+/* ── TENGAH: harga ── */
+.label-price-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center; /* ← tengah secara horizontal */
+  padding: 0 32px;
+  gap: 8px;
+}
+.label-price-rp {
+ font-family: 'Manrope', var(--font-label);
+  font-size: 45px;
+  font-weight: 900;
+  color: var(--black);
+  line-height: 1;
+  flex-shrink: 0;
+  align-self: center;   /* ← sejajar bawah angka */
+  padding-bottom: 8px;    /* ← sesuaikan agar baseline ketemu */
+}
+.label-price-num {
+   font-family: 'Anton', var(--font-label);
+  font-size: 110px;
+  
+  color: var(--black);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  letter-spacing: 0.05em;
+}
+/* Penyesuaian font jika harga panjang */
+.label-price-num.medium { font-size: 86px; }
+.label-price-num.small  { font-size: 68px; }
+
+/* ── BAWAH: logo + nama toko ── */
+.label-brand-area {
+  height: 70px;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 20px;
+  gap: 12px;
+  border-top: var(--divider);
+  padding: 0 32px;
 }
 .label-logo {
-  width: 170px;
-  height: 170px;
+  width: 250px;
+  height: 250px;
   object-fit: contain;
 }
 .label-logo-fallback {
-  width: 90px;
-  height: 90px;
+  width: 38px;
+  height: 38px;
 }
 .label-store-name {
-  font-size: 16px;
-  font-weight: 900;
-  letter-spacing: 0.06em;
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
   text-transform: lowercase;
   color: var(--black);
-}
-
-/* RIGHT: info column */
-.label-right {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-/* RIGHT TOP: product name */
-.label-top {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 20px 28px;
-  border-bottom: var(--divider);
-}
-.label-headline1 {
-  font-family: 'Bebas Neue', var(--font-label);
-  font-size: 50px;
-  font-weight: 900;
-  line-height: 1.1;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  color: var(--black);
-  word-break: break-word;
-  letter-spacing: 0.04em;
-}
-.label-headline2 {
-  font-family: 'Bebas Neue', var(--font-label);
-  font-size: 50px;
-  font-weight: 700;
-  line-height: 1.2;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  color: var(--black);
-  margin-top: 4px;
-  word-break: break-word;
-  letter-spacing: 0.04em;
-}
-
-/* RIGHT BOTTOM: price */
-.label-bottom {
-  height: 120px;
-  display: flex;
-  align-items: center;
-  padding: 0 28px;
-}
-.label-price {
-  font-family: var(--font-label);
-  font-size: 54px;
-  font-weight: 900;
-  letter-spacing: 0.02em;
-  color: var(--black);
   line-height: 1;
-  white-space: nowrap;
 }
-
-/* Dynamic font sizing for long prices */
-.label-price.medium { font-size: 44px; }
-.label-price.small  { font-size: 36px; }
 
 /* =============================================
    PRINT STYLES
@@ -431,86 +440,52 @@ body {
     margin: 0;
   }
 
-  body {
-    background: white;
-    margin: 0;
-    padding: 0;
-  }
+  body { background: white; margin: 0; padding: 0; }
 
   .screen > *:not(.nota-section) { display: none !important; }
-  .screen { padding: 0; max-width: none; }
+  .screen { padding: 0; max-width: none; margin: 0; }
 
-  .nota-section {
-    display: block !important;
-    margin: 0;
-  }
+  .nota-section      { display: block !important; margin: 0; }
   .nota-section-head { display: none !important; }
+
+  .nota-scroll-wrap  { width: 100%; overflow: visible; }
 
   .nota-wrap {
     border: none;
     display: block;
     width: 100%;
+    transform: none !important;
+    margin: 0 !important;
   }
 
+  /* Label: full lebar kertas, tinggi proporsional */
   .label-tag {
-    width: 57mm;
-    height: 34.4mm;
+    width: 100%;
+    height: auto;
     border-bottom: 0.5pt solid #000;
-    border-top: none;
-    border-left: none;
-    border-right: none;
-    page-break-inside: avoid;
-    break-inside: avoid;
   }
   .label-tag:last-child { border-bottom: none; }
 
-  .label-left {
-    width: 17.1mm;
-    border-right: 0.5pt solid #000;
-    padding: 2mm;
-    gap: 1.5mm;
-  }
-  .label-logo, .label-logo-fallback {
-    width: 12mm;
-    height: 12mm;
-  }
-  .label-store-name { font-size: 5pt; letter-spacing: 0.03em; }
-
-  .label-top {
-    padding: 2mm 3mm;
+  .label-name-area {
+    height: auto;
+    padding: 2mm 4mm;
     border-bottom: 0.5pt solid #000;
   }
-  .label-headline1 { font-size: 7.5pt; }
-  .label-headline2 { font-size: 6pt; }
+  .label-headline1 { font-size: 14pt; letter-spacing: 0.04em; }
+  .label-headline2 { font-size: 9pt;  letter-spacing: 0.04em; }
 
-  .label-bottom {
+  .label-price-area { padding: 1mm 4mm; gap: 2mm; }
+  .label-price-rp   { font-size: 10pt; padding-bottom: 2mm; }
+  .label-price-num        { font-size: 32pt; }
+  .label-price-num.medium { font-size: 26pt; }
+  .label-price-num.small  { font-size: 20pt; }
+
+  .label-brand-area {
     height: auto;
-    padding: 1.5mm 3mm;
-    flex: 1;
+    padding: 2mm 4mm;
+    border-top: 0.5pt solid #000;
+    gap: 2mm;
   }
-  .label-price       { font-size: 12pt; }
-  .label-price.medium { font-size: 10pt; }
-  .label-price.small  { font-size: 8pt; }
-}
-
-
-.nota-scroll-wrap {
-  width: 100%;
-  overflow-x: auto; /* scroll horizontal kalau mau */
-}
-
-.nota-wrap {
-  display: inline-block;
-  background: var(--white);
-  border: 2px solid var(--black);
-  transform-origin: top left;
-}
-
-@media (max-width: 860px) {
-  .nota-wrap {
-    /* Scale 580px → lebar layar penuh */
-    transform: scale(0.45);
-    /* Kompensasi ruang kosong sisa transform */
-    margin-right: -55%;
-  }
+  .label-logo, .label-logo-fallback { width: 8mm; height: 8mm; }
+  .label-store-name { font-size: 11pt; }
 }
