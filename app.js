@@ -296,75 +296,150 @@ function exportAsPNG() {
   const products = getProducts();
   if (products.length === 0) return alert('Belum ada produk!');
 
-  // Pastikan nota sudah digenerate
-  prosesCetak();
+  const font = new FontFace(
+    'Bebas Neue',
+    'url(https://fonts.gstatic.com/s/bebasneuwe/v14/JTUSjIg69CK48gW7PXoo9Wdhyzbi.woff2)'
+  );
 
-  setTimeout(() => {
-    const labels = document.querySelectorAll('.label-tag');
-    const W = 580;
-    const H = 350;
-    const canvas = document.createElement('canvas');
-    canvas.width  = W;
-    canvas.height = H * labels.length;
-    const ctx = canvas.getContext('2d');
+  font.load().then(function(loadedFont) {
+    document.fonts.add(loadedFont);
 
-    // Background putih
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    prosesCetak();
 
-    labels.forEach((label, i) => {
-      const offsetY = i * H;
+    setTimeout(() => {
+      const labels = document.querySelectorAll('.label-tag');
+      const W = 580;
+      const H = 350;
+      const canvas = document.createElement('canvas');
+      canvas.width  = W;
+      canvas.height = H * labels.length;
+      const ctx = canvas.getContext('2d');
 
-      // Garis pemisah antar label
-      if (i > 0) {
+      // Background putih
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      labels.forEach((label, i) => {
+        const offsetY = i * H;
+
+        // Garis pemisah antar label
+        if (i > 0) {
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(0, offsetY);
+          ctx.lineTo(W, offsetY);
+          ctx.stroke();
+        }
+
+        // Garis vertikal pemisah logo | info
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(0, offsetY);
-        ctx.lineTo(W, offsetY);
+        ctx.moveTo(174, offsetY);
+        ctx.lineTo(174, offsetY + H);
         ctx.stroke();
-      }
 
-      // Garis vertikal pemisah logo | info
-      ctx.strokeStyle = '#000';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(174, offsetY);
-      ctx.lineTo(174, offsetY + H);
-      ctx.stroke();
+        // Garis horizontal pemisah nama | harga
+        ctx.beginPath();
+        ctx.moveTo(174, offsetY + 230);
+        ctx.lineTo(W, offsetY + 230);
+        ctx.stroke();
 
-      // Garis horizontal pemisah nama | harga
-      ctx.beginPath();
-      ctx.moveTo(174, offsetY + 230);
-      ctx.lineTo(W, offsetY + 230);
-      ctx.stroke();
+        // Logo
+        const img = label.querySelector('.label-logo');
+        if (img && img.complete && img.naturalWidth > 0) {
+          ctx.drawImage(img, 37, offsetY + 70, 100, 100);
+        }
 
-      // Logo
-      const img = label.querySelector('.label-logo');
-      if (img && img.complete && img.naturalWidth > 0) {
-        ctx.drawImage(img, 37, offsetY + 70, 100, 100);
-      }
+        // Headline 1
+        ctx.fillStyle = '#0a0a0a';
+        ctx.font = '45px "Bebas Neue"';
+        ctx.fillText(products[i].h1.toUpperCase(), 202, offsetY + 90, 360);
 
-      // Headline 1
-      ctx.fillStyle = '#0a0a0a';
-      ctx.font = 'bold 32px Arial Black, Arial';
-      ctx.fillText(products[i].h1.toUpperCase(), 202, offsetY + 90, 360);
+        // Headline 2
+        ctx.font = '36px "Bebas Neue"';
+        ctx.fillText(products[i].h2.toUpperCase(), 202, offsetY + 130, 360);
 
-      // Headline 2
-      ctx.font = 'bold 26px Arial Black, Arial';
-      ctx.fillText(products[i].h2.toUpperCase(), 202, offsetY + 130, 360);
+        // Harga
+        const harga = formatHarga(products[i].harga);
+        const fontSize = harga.length > 14 ? 38 : harga.length > 11 ? 46 : 54;
+        ctx.font = `bold ${fontSize}px Arial Black, Arial`;
+        ctx.fillText(harga, 202, offsetY + 300, 360);
+      });
 
-      // Harga
-      const harga = formatHarga(products[i].harga);
-      const fontSize = harga.length > 14 ? 38 : harga.length > 11 ? 46 : 54;
-      ctx.font = `bold ${fontSize}px Arial Black, Arial`;
-      ctx.fillText(harga, 202, offsetY + 300, 360);
-    });
+      // Download
+      const link = document.createElement('a');
+      link.download = 'samoro-label.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
 
-    // Download
-    const link = document.createElement('a');
-    link.download = 'samoro-label.png';
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-  }, 300);
+    }, 300);
+
+  }).catch(function(err) {
+    console.error('Font gagal load, pakai fallback:', err);
+
+    prosesCetak();
+
+    setTimeout(() => {
+      const labels = document.querySelectorAll('.label-tag');
+      const W = 580;
+      const H = 350;
+      const canvas = document.createElement('canvas');
+      canvas.width  = W;
+      canvas.height = H * labels.length;
+      const ctx = canvas.getContext('2d');
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      labels.forEach((label, i) => {
+        const offsetY = i * H;
+
+        if (i > 0) {
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(0, offsetY);
+          ctx.lineTo(W, offsetY);
+          ctx.stroke();
+        }
+
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(174, offsetY);
+        ctx.lineTo(174, offsetY + H);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(174, offsetY + 230);
+        ctx.lineTo(W, offsetY + 230);
+        ctx.stroke();
+
+        const img = label.querySelector('.label-logo');
+        if (img && img.complete && img.naturalWidth > 0) {
+          ctx.drawImage(img, 37, offsetY + 70, 100, 100);
+        }
+
+        ctx.fillStyle = '#0a0a0a';
+        ctx.font = 'bold 45px Arial Black, Arial';
+        ctx.fillText(products[i].h1.toUpperCase(), 202, offsetY + 90, 360);
+
+        ctx.font = 'bold 36px Arial Black, Arial';
+        ctx.fillText(products[i].h2.toUpperCase(), 202, offsetY + 130, 360);
+
+        const harga = formatHarga(products[i].harga);
+        const fontSize = harga.length > 14 ? 38 : harga.length > 11 ? 46 : 54;
+        ctx.font = `bold ${fontSize}px Arial Black, Arial`;
+        ctx.fillText(harga, 202, offsetY + 300, 360);
+      });
+
+      const link = document.createElement('a');
+      link.download = 'samoro-label.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+
+    }, 300);
+  });
 }
