@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Generator Nota – Toko Samoro</title>
+  <link rel="stylesheet" href="nota-samoro.css" />
+</head>
+<body>
+
+  <header>
+    <div class="header-inner">
+      <span class="header-sub">Toko Samoro</span>
+      <h1>Generator Nota Transfer Bank</h1>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <div class="tabs-inner">
+      <button class="tab active" data-tab="generate">Buat Nota</button>
+      <button class="tab" data-tab="history">Riwayat (<span id="history-count">0</span>)</button>
+    </div>
+  </nav>
+
+  <main>
+
+    <!-- ===== TAB: BUAT NOTA ===== -->
+    <div id="tab-generate" class="tab-content active">
+
+      <!-- Step 1: Upload -->
+      <div class="card">
+        <div class="section-label">1 — Upload Struk Bank</div>
+        <input type="file" id="file-input" accept="image/*" hidden />
+
+        <div id="drop-zone" class="drop-zone">
+          <div class="drop-icon">↑</div>
+          <div class="drop-text">Klik untuk pilih foto struk</div>
+          <div class="drop-sub">Bank Aladin · SeaBank · Jago Syariah</div>
+          <div class="drop-note">⚠ Perlu internet pertama kali untuk unduh model OCR (~10MB)</div>
+        </div>
+
+        <div id="img-preview" class="hidden">
+          <img id="preview-img" src="" alt="preview struk" />
+          <button id="btn-change" class="btn-link-red">Ganti foto</button>
+        </div>
+
+        <!-- Progress OCR -->
+        <div id="ocr-progress" class="hidden">
+          <div class="progress-bar">
+            <div id="progress-fill" class="progress-fill" style="width:0%"></div>
+          </div>
+          <div id="progress-text" class="progress-text">Memuat model OCR...</div>
+        </div>
+
+        <button id="btn-extract" class="btn-primary hidden">Baca Struk Otomatis</button>
+      </div>
+
+      <!-- Debug OCR (bisa dibuka jika ada masalah) -->
+      <div id="card-debug" class="card hidden">
+        <div class="section-label toggle-debug" id="toggle-debug">▶ Teks OCR mentah (klik untuk lihat/sembunyikan)</div>
+        <pre id="ocr-raw" class="hidden"></pre>
+      </div>
+
+      <!-- Step 2: Admin Fee -->
+      <div id="card-admin" class="card hidden">
+        <div class="section-label">2 — Biaya Admin Toko</div>
+        <div id="admin-hint" class="hint"></div>
+        <div class="admin-row">
+          <div class="field-wrap">
+            <label class="field-label">Biaya Admin (Rp)</label>
+            <input type="number" id="admin-input" min="0" />
+          </div>
+          <button id="btn-reset-admin" class="btn-sec">Reset Auto</button>
+        </div>
+        <div class="total-bar">
+          <span>Total Tagihan</span>
+          <strong id="total-display">—</strong>
+        </div>
+      </div>
+
+      <!-- Step 3: Preview + Download -->
+      <div id="card-preview" class="card hidden">
+        <div class="section-label">3 — Preview Nota (57mm)</div>
+        <div class="thermal-wrapper">
+          <div id="nota-preview" class="thermal-nota"></div>
+        </div>
+        <button id="btn-download" class="btn-green">Download Nota (JPG) &amp; Simpan Riwayat</button>
+      </div>
+
+    </div>
+
+    <!-- ===== TAB: RIWAYAT ===== -->
+    <div id="tab-history" class="tab-content hidden">
+      <div id="history-list"></div>
+      <div id="history-empty" class="empty-state">
+        <div class="empty-icon">📋</div>
+        <p>Belum ada riwayat nota tersimpan</p>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Tesseract.js dari CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+  <script src="nota-samoro.js"></script>
+</body>
+</html>
