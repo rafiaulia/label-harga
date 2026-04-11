@@ -203,18 +203,25 @@ function parseAladin(text) {
 
 /* ── PARSER: SEABANK ─────────────────────────────────────── */
 /*
-  Struktur struk SeaBank:
-    SeaBank
-    Bukti Transaksi
+  Struktur struk SeaBank (OCR membaca 2-kolom sebagai baris terpisah):
+    SeaBank / Bukti Transaksi
     Rp 500.000
-    Dari  [NAMA]  SeaBank: ********6497
-    Ke    [NAMA]  BANK JAGO SYARIAH: ********7067
-    Jumlah Transfer       Rp 500.000
-    No. Transaksi         20260409435052161...
-    Metode Transaksi      BI-FAST
-    Waktu Transaksi       09 Apr 2026, 12:24
+    Dari                        ← label sendiri ATAU inline
+    [NAMA PENGIRIM]             ← nama di baris berikutnya
+    SeaBank: ********6497       ← rek pengirim
+    Ke                          ← label sendiri ATAU inline
+    [NAMA TUJUAN]               ← nama di baris berikutnya
+    BANK JAGO SYARIAH: ****7067 ← bank + rek tujuan
+    Jumlah Transfer  Rp 500.000
+    No. Transaksi    20260409...
+    Metode Transaksi BI-FAST
+    Waktu Transaksi  09 Apr 2026, 12:24
+
+  ROOT CAUSE lama: regex mengasumsikan nama+bank+rek pada SATU baris.
+  Kenyataannya Tesseract membacanya baris terpisah karena layout 2 kolom.
 */
 function parseSeaBank(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const jumlah = extractAmount(text);
 
   // Waktu transaksi
@@ -227,48 +234,69 @@ function parseSeaBank(text) {
 
   const metode = /bi[-\s]?fast/i.test(text) ? 'BI FAST' : '';
 
-  // ── Pengirim (Dari) ──
-  // Pola di baris: "[NAMA]  SeaBank: ********6497"
+  /* ── PENGIRIM ──
+     Strategi: cari baris "SeaBank: ****6497", lalu ambil nama di baris sebelumnya.
+     Juga handle kasus "Dari NamaPengirim" inline. */
   let namaPengirim = '', rekPengirim = '';
 
-  // Coba satu baris dengan nama + SeaBank + rek
-  const dariLineM = text.match(/dari\s+(.+?)\s+SeaBank[:\s]+([\*\d]+)/i);
-  if (dariLineM) {
-    namaPengirim = dariLineM[1].trim();
-    rekPengirim  = dariLineM[2];
-  } else {
-    // Fallback: cari rek SeaBank saja
-    const sbRekM = text.match(/SeaBank[:\s]+([\*\d]{8,})/i);
-    if (sbRekM) rekPengirim = sbRekM[1];
-    // Nama: baris setelah "Dari"
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-    const idxD  = lines.findIndex(l => /^dari$/i.test(l));
-    if (idxD >= 0) namaPengirim = lines[idxD + 1] || '';
+  // 1. Cari rek pengirim dari pola "SeaBank: ****XXXX"
+  const idxSBRek = lines.findIndex(l => /seabank[:\s]+[\*\d]/i.test(l));
+  if (idxSBRek >= 0) {
+    const rekM = lines[idxSBRek].match(/seabank[:\s]+([\*\d]+)/i);
+    if (rekM) rekPengirim = rekM[1];
+
+    // 2. Nama: cari mundur dari baris rek, skip baris "Dari" dan baris kosong
+    for (let i = idxSBRek - 1; i >= 0; i--) {
+      const l = lines[i];
+      if (/^dari$/i.test(l)) break; // label saja, berhenti
+      // Kalau baris mengandung "Dari Nama" inline
+      const dariInlineM = l.match(/^dari\s+(.{2,})/i);
+      if (dariInlineM) { namaPengirim = dariInlineM[1].trim(); break; }
+      // Kalau baris adalah nama (bukan label/angka/header)
+      if (l.length > 2 && !/^(seabank|dari|ke|rp\s*\d|bukti|transaksi)/i.test(l) && !/^\d+$/.test(l)) {
+        namaPengirim = l; break;
+      }
+    }
   }
 
-  // ── Tujuan (Ke) ──
-  // Pola: "Ke [NAMA] BANK JAGO SYARIAH: ********7067"
+  /* ── TUJUAN ──
+     Strategi: cari baris "BANK XXX SYARIAH: ****XXXX" atau "XXX BANK: ****XXXX",
+     lalu ambil nama di baris sebelumnya. */
   let namaTujuan = '', bankTujuan = '', rekTujuan = '';
 
-  const keLineM = text.match(/ke\s+(.+?)\s+((?:BANK\s+)?[A-Z][A-Z\s]+(?:SYARIAH|BANK)?)[:\s]+([\*\d]+)/i);
-  if (keLineM) {
-    namaTujuan = keLineM[1].trim();
-    bankTujuan = keLineM[2].trim();
-    rekTujuan  = keLineM[3];
-  } else {
-    // Fallback per baris
-    const lines  = text.split('\n').map(l => l.trim()).filter(Boolean);
-    const idxKe  = lines.findIndex(l => /^ke$/i.test(l));
+  // 1. Cari baris bank tujuan — pola "BANK JAGO SYARIAH: ****7067"
+  //    atau nama bank diikuti titik dua dan rek tersensor
+  const idxBankTujuan = lines.findIndex(l =>
+    /(BANK\s+[A-Z]+(?:\s+[A-Z]+)*|[A-Z]+\s+SYARIAH)[:\s]+([\*]{2,}\d{4})/i.test(l)
+  );
+
+  if (idxBankTujuan >= 0) {
+    const bLine = lines[idxBankTujuan];
+    const bM = bLine.match(/^(BANK\s+[A-Z]+(?:\s+[A-Z]+)*|[A-Z]+(?:\s+[A-Z]+)*\s+SYARIAH|[A-Z]+\s+BANK(?:\s+[A-Z]+)?)[:\s]+([\*\d]+)/i);
+    if (bM) {
+      bankTujuan = bM[1].trim();
+      rekTujuan  = bM[2];
+    }
+
+    // 2. Nama: cari mundur dari baris bank, skip label "Ke"
+    for (let i = idxBankTujuan - 1; i >= 0; i--) {
+      const l = lines[i];
+      if (/^ke$/i.test(l)) break;
+      const keInlineM = l.match(/^ke\s+(.{2,})/i);
+      if (keInlineM) { namaTujuan = keInlineM[1].trim(); break; }
+      if (l.length > 2 && !/^(seabank|dari|ke|rp\s*\d|bukti|transaksi)/i.test(l) && !/^\d+$/.test(l) && !/[\*]{4}/.test(l)) {
+        namaTujuan = l; break;
+      }
+    }
+  }
+
+  // Fallback nama tujuan: baris setelah "Ke"
+  if (!namaTujuan) {
+    const idxKe = lines.findIndex(l => /^ke$/i.test(l));
     if (idxKe >= 0) {
-      const keLine = lines[idxKe + 1] || '';
-      // "Ra Arr Fah   BANK JAGO SYARIAH: ****7067"
-      const m2 = keLine.match(/^(.+?)\s+((?:BANK\s+)?[A-Z][A-Z\s]+)[:\s]+([\*\d]+)$/i);
-      if (m2) {
-        namaTujuan = m2[1].trim();
-        bankTujuan = m2[2].trim();
-        rekTujuan  = m2[3];
-      } else {
-        namaTujuan = keLine;
+      for (let i = idxKe + 1; i < Math.min(idxKe + 4, lines.length); i++) {
+        const l = lines[i];
+        if (l.length > 2 && !/seabank|^(bank|rp\s*\d)/i.test(l)) { namaTujuan = l; break; }
       }
     }
   }
@@ -290,9 +318,11 @@ function parseSeaBank(text) {
 /* ── PARSER: JAGO SYARIAH ────────────────────────────────── */
 /*
   Struktur struk Jago:
-    [NAMA TUJUAN]           ← baris awal (penerima)
-    Mandiri • 9000029...    ← bank tujuan + partial rek
-    Rp142.000               ← nominal
+    syariah / Jago              ← header (noise)
+    [NAMA TUJUAN]               ← baris pertama bermakna (all caps)
+    Mandiri • 9000029...        ← bank tujuan + rek tujuan
+    FS / mandiri                ← avatar & logo (noise)
+    Rp142.000
     ID Transaksi
     260301SYATIDJ100...
     Sumber akun
@@ -300,48 +330,107 @@ function parseSeaBank(text) {
     Jago 5001270...
     Tanggal & waktu transaksi
     01 Mar 2026, 21:16 WIB
+
+  ROOT CAUSE lama:
+  1. Karakter "•" dibaca Tesseract sebagai "." atau "-" atau spasi → regex [•·] tidak cocok
+  2. Watermark "jago" berulang → lines[bankLineIdx - 1] sering dapat "jago" bukan nama tujuan
 */
 function parseJago(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-
   const jumlah = extractAmount(text);
 
-  // Tanggal — baris setelah label "Tanggal & waktu transaksi"
+  // Tanggal
   const idxTgl = lines.findIndex(l => /tanggal\s*&?\s*waktu/i.test(l));
   const tanggal = idxTgl >= 0 ? (lines[idxTgl + 1] || '') : '';
 
-  // ID Transaksi — baris setelah label "ID Transaksi"
+  // ID Transaksi
   const idxId = lines.findIndex(l => /id\s*transaksi/i.test(l));
   const noTransaksi = idxId >= 0 ? (lines[idxId + 1] || '') : '';
 
   const metode = 'BI FAST';
 
-  // ── Tujuan: nama tujuan & bank tujuan ──
-  // Bank tujuan biasanya ada pola "NamaBank • XXXXXXXXX"
+  /* ── TUJUAN ──
+     Cari baris yang berisi nama bank diikuti separator (•, ., -, spasi) dan nomor rekening.
+     Tesseract sering membaca "•" sebagai "." atau "- " atau bahkan menghilangkannya.
+     Pola yang ditangani: "Mandiri • 9000029...", "Mandiri. 9000029...",
+     "Mandiri - 9000029...", "Mandiri 9000029..." */
   let namaTujuan = '', bankTujuan = '', rekTujuan = '';
-  const idxBankDot = lines.findIndex(l => /[•·]/.test(l) || /mandiri|bca|bri|bni|bsi|danamon|permata|cimb/i.test(l));
-  if (idxBankDot > 0) {
-    namaTujuan = lines[idxBankDot - 1];
-    const bLine = lines[idxBankDot];
-    // "Mandiri • 9000029xxx"
-    const bM = bLine.match(/^(.+?)\s*[•·]\s*([\d*]+)/);
-    if (bM) {
-      bankTujuan = bM[1].trim();
-      rekTujuan  = bM[2];
+
+  const BANK_NAMES = /^(mandiri|bca|bri|bni|bsi|danamon|permata|cimb|btpn|ocbc|mega|bukopin)/i;
+
+  const idxBankLine = lines.findIndex(l => {
+    if (!BANK_NAMES.test(l)) return false;
+    // Ada angka di baris yang sama (rek tujuan sebagian)
+    return /\d{5,}/.test(l) ||
+      // Atau ada separator apapun setelah nama bank diikuti angka
+      /^[a-z]+\s*[•·\-\.]\s*\d/i.test(l) ||
+      // Atau nama bank + spasi + angka langsung
+      /^[a-z]+\s+\d{6,}/i.test(l);
+  });
+
+  if (idxBankLine >= 0) {
+    const bLine = lines[idxBankLine];
+
+    // Ekstrak nama bank: ambil kata sebelum separator atau angka
+    const bankM = bLine.match(/^([A-Za-z]+(?:\s+[A-Za-z]+)?)\s*[•·\-\.\s]\s*(\d+)/);
+    if (bankM) {
+      bankTujuan = bankM[1].trim();
+      rekTujuan  = bankM[2];
     } else {
-      bankTujuan = bLine;
+      // Fallback: nama bank = semua huruf di awal baris
+      const onlyBank = bLine.match(/^([A-Za-z\s]+)/);
+      if (onlyBank) bankTujuan = onlyBank[1].trim();
+    }
+
+    // Nama tujuan: cari mundur dari bank line, SKIP watermark dan noise
+    const NOISE = /^(jago|syariah|fs|mandiri|bca|bri|bni|rp\s*\d|\d+$)/i;
+    for (let i = idxBankLine - 1; i >= 0; i--) {
+      const l = lines[i];
+      if (l.length < 3) continue;
+      if (NOISE.test(l)) continue;
+      namaTujuan = l;
+      break;
     }
   }
 
-  // ── Pengirim: dari "Sumber akun" ──
+  // Fallback nama tujuan: baris all-caps pertama setelah header (min 4 huruf)
+  if (!namaTujuan) {
+    const idxAllCaps = lines.findIndex((l, i) =>
+      i >= 1 && /^[A-Z][A-Z\s]{3,}$/.test(l) && !/^(JAGO|SYARIAH)$/.test(l)
+    );
+    if (idxAllCaps >= 0) namaTujuan = lines[idxAllCaps];
+  }
+
+  /* ── PENGIRIM ──
+     Setelah "Sumber akun": nama di baris berikutnya, rek dari baris "Jago XXXXXX".
+     Catatan: banyak baris "jago" (watermark) di sekitarnya —
+     pastikan ambil yang punya angka setelahnya. */
   let namaPengirim = '', rekPengirim = '';
+
   const idxSumber = lines.findIndex(l => /sumber\s*akun/i.test(l));
   if (idxSumber >= 0) {
-    namaPengirim = lines[idxSumber + 1] || '';
-    const jagoLine = lines[idxSumber + 2] || '';
-    // "Jago 5001270..." — ambil angka setelahnya
-    const jM = jagoLine.match(/jago\s+([\d*]+)/i);
-    if (jM) rekPengirim = jM[1];
+    // Nama: baris setelah "Sumber akun" yang bukan rek dan bukan watermark
+    for (let i = idxSumber + 1; i < Math.min(idxSumber + 5, lines.length); i++) {
+      const l = lines[i];
+      // Baris rek: "Jago 5001270..."
+      if (/^jago\s+\d/i.test(l)) {
+        const jM = l.match(/jago\s+([\d]+)/i);
+        if (jM) rekPengirim = jM[1];
+        break;
+      }
+      // Skip watermark "jago" saja tanpa angka
+      if (/^jago$/i.test(l)) continue;
+      if (l.length < 3 || /^\d+$/.test(l)) continue;
+      if (!namaPengirim) namaPengirim = l;
+    }
+
+    // Kalau nama sudah dapat tapi rek belum, terus cari
+    if (!rekPengirim) {
+      for (let i = idxSumber + 1; i < Math.min(idxSumber + 8, lines.length); i++) {
+        const jM = lines[i].match(/^jago\s+([\d]{4,})/i);
+        if (jM) { rekPengirim = jM[1]; break; }
+      }
+    }
   }
 
   return {
