@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Generator Nota – Toko Samoro</title>
   <link rel="stylesheet" href="nota-samoro.css" />
+  
 </head>
 <body>
 
@@ -63,7 +64,17 @@
 
       <!-- Step 2: Admin Fee -->
       <div id="card-admin" class="card hidden">
-        <div class="section-label">2 — Biaya Admin Toko</div>
+        <div class="section-label">2 — Input Nominal & Admin</div>
+        
+        <!-- NOMINAL TRANSFER INPUT -->
+        <div class="admin-row">
+          <div class="field-wrap">
+            <label class="field-label">Nominal Transfer (Rp)</label>
+            <input type="number" id="nominal-input" min="0" placeholder="Contoh: 142000" />
+          </div>
+        </div>
+
+        <!-- ADMIN FEE -->
         <div id="admin-hint" class="hint"></div>
         <div class="admin-row">
           <div class="field-wrap">
@@ -72,9 +83,58 @@
           </div>
           <button id="btn-reset-admin" class="btn-sec">Reset Auto</button>
         </div>
+        
+        <!-- TOTAL -->
         <div class="total-bar">
           <span>Total Tagihan</span>
           <strong id="total-display">—</strong>
+        </div>
+
+        <!-- KOREKSI DATA BANK (collapsible) -->
+        <div class="edit-section">
+          <button id="btn-toggle-edit" class="btn-toggle-edit">▶ Koreksi Data Bank (jika OCR salah)</button>
+          
+          <div id="edit-content" class="edit-content hidden">
+            <div class="edit-grid">
+              <div class="field-wrap">
+                <label class="field-label">Bank Pengirim</label>
+                <input type="text" id="edit-bank-pengirim" placeholder="Cth: SeaBank" />
+              </div>
+              <div class="field-wrap">
+                <label class="field-label">Nama Pengirim</label>
+                <input type="text" id="edit-nama-pengirim" placeholder="Cth: Rafi Aulia Fahrezi" />
+              </div>
+            </div>
+
+            <div class="edit-grid">
+              <div class="field-wrap">
+                <label class="field-label">Rekening Pengirim</label>
+                <input type="text" id="edit-rek-pengirim" placeholder="Cth: 500127077067" />
+              </div>
+              <div class="field-wrap">
+                <label class="field-label">Bank Tujuan</label>
+                <input type="text" id="edit-bank-tujuan" placeholder="Cth: BANK JAGO SYARIAH" />
+              </div>
+            </div>
+
+            <div class="edit-grid">
+              <div class="field-wrap">
+                <label class="field-label">Nama Tujuan</label>
+                <input type="text" id="edit-nama-tujuan" placeholder="Cth: Fitri Komala Sari" />
+              </div>
+              <div class="field-wrap">
+                <label class="field-label">Rekening Tujuan</label>
+                <input type="text" id="edit-rek-tujuan" placeholder="Cth: 9000029427458" />
+              </div>
+            </div>
+
+            <div class="edit-grid">
+              <div class="field-wrap">
+                <label class="field-label">Waktu Transaksi</label>
+                <input type="text" id="edit-waktu" placeholder="Cth: 01 Mar 2026, 21:16 WIB" />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -92,7 +152,7 @@
     <!-- ===== TAB: RIWAYAT ===== -->
     <div id="tab-history" class="tab-content hidden">
       <div id="history-list"></div>
-      <div id="history-empty" class="empty-state">
+      <div id="history-empty" class="empty-state hidden">
         <div class="empty-icon">📋</div>
         <p>Belum ada riwayat nota tersimpan</p>
       </div>
@@ -101,7 +161,8 @@
   </main>
 
   <!-- Tesseract.js dari CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
-  <script src="nota-samoro.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="nota-samoro.js"></script>
 </body>
 </html>

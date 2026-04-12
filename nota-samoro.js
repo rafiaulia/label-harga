@@ -34,9 +34,11 @@ function fmtRp(n) {
 function parseRp(str) {
   if (!str) return 0;
   let s = String(str).trim();
+  // Clean OCR noise: O→0, l→1, I→1
+  s = s.replace(/[Ol]/g, '0').replace(/I/g, '1');
   s = s.replace(/[Rr][Pp]/g, '').trim();
-  s = s.replace(/,\d{1,2}$/, '');   // hapus desimal koma
-  s = s.replace(/\./g, '');          // hapus titik ribuan
+  s = s.replace(/,\d{1,2}$/, '');
+  s = s.replace(/[\s.]/g, '');   // ← handle spasi dan titik
   s = s.replace(/[^\d]/g, '');
   return parseInt(s) || 0;
 }
@@ -58,11 +60,11 @@ function sensorNama(nama) {
 /** Sensor rekening: tampilkan ********XXXX (4 digit terakhir) */
 function sensorRek(rek) {
   if (!rek) return '--------';
+  // Ambil HANYA digit, lalu ambil 4 terakhir
   const digits = String(rek).replace(/\D/g, '');
-  if (!digits) return '--------';
+  if (digits.length < 4) return '--------';
   return '********' + digits.slice(-4);
 }
-
 /** Tanggal & waktu saat ini */
 function buildWaktu() {
   const d  = new Date();
@@ -112,21 +114,68 @@ function detectBank(text) {
 /** Cari jumlah transfer dari teks — ambil nilai setelah "Jumlah Transfer"
  *  atau nilai Rp terbesar sebagai fallback */
 function extractAmount(text) {
-  // Prioritas: cari label "Jumlah Transfer"
+  // Helper: bersihkan OCR noise dari string rupiah
+  const cleanOCR = str => str.replace(/[Ol]/g, '0').replace(/i/g, '1').replace(/I/g, '1');
+  
+  // Prioritas 0: JAGO KHUSUS — cari "Rp" + angka dengan toleransi OCR noise
+  const jagoRpMatch = text.match(/rp\s{0,2}([\d\.,]{2,})/i);
+  if (jagoRpMatch) {
+    const raw = jagoRpMatch[1];
+    const cleaned = cleanOCR(raw).trim();
+    const val = parseRp(cleaned);
+    if (val > 0 && val < 100000000) return val;
+  }
+
+  // Prioritas 1: setelah label "Jumlah Transfer"
   const jumlahMatch = text.match(/jumlah\s*transfer[^\d]*([\d.,\s]{3,})/i);
   if (jumlahMatch) {
-    const val = parseRp(jumlahMatch[1]);
+    const val = parseRp(cleanOCR(jumlahMatch[1]));
     if (val > 0) return val;
   }
-  // Fallback: ambil semua Rp lalu pilih yang terbesar
-  const rpMatches = [...text.matchAll(/[Rr][Pp][\s]*([\d.,]{3,})/g)];
-  if (rpMatches.length) {
-    const vals = rpMatches.map(m => parseRp(m[1])).filter(v => v > 0);
-    return vals.length ? Math.max(...vals) : 0;
+  
+  // Prioritas 2: "Rp" dengan variasi noise
+  const rpPatterns = [
+    /rp\s{0,5}([\d][0-9.,\s]{2,})/gi,
+    /rp[^\w\s]+\s*([\d][0-9.,\s]{2,})/gi,
+  ];
+  
+  for (const pattern of rpPatterns) {
+    const matches = [...text.matchAll(pattern)];
+    if (matches.length) {
+      const vals = matches.map(m => parseRp(cleanOCR(m[1]))).filter(v => v >= 1000);
+      if (vals.length) return Math.max(...vals);
+    }
   }
+  
+  // Prioritas 3: angka standalone di baris sendiri (untuk Jago yg tanpa "Rp")
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const standaloneVals = [];
+  for (const l of lines) {
+    if (/^[\d][0-9.,\s]{2,}$/.test(l) || /^[\dOl][0-9.,\sOlI]{2,}$/.test(l)) {
+      const cleaned = cleanOCR(l);
+      const v = parseRp(cleaned);
+      if (v >= 1000) standaloneVals.push(v);
+    }
+  }
+  if (standaloneVals.length) return Math.max(...standaloneVals);
+  
+  // Prioritas 4: cari angka besar pertama (fallback)
+  const allDigitMatches = [...text.matchAll(/([\d]{3,}[\.,]?[\d]*)/g)];
+  const bigNumbers = allDigitMatches.map(m => parseRp(m[1])).filter(v => v >= 10000 && v < 100000000);
+  if (bigNumbers.length) return Math.max(...bigNumbers);
+  
+  // Prioritas 5: AGGRESSIVE fallback untuk Jago
+  // Cari angka 3+ digit dengan separator (. , spasi) di seluruh teks
+  // Format: 142.000 atau 142,000 atau 142 000 atau 142000
+  const aggressiveMatch = text.match(/([\d]{2,3}[\.\,\s]?[\d]{3}[\.\,\s]?[\d]{0,3})/);
+  if (aggressiveMatch) {
+    const cleaned = cleanOCR(aggressiveMatch[1]);
+    const v = parseRp(cleaned);
+    if (v >= 10000 && v < 100000000) return v;
+  }
+  
   return 0;
 }
-
 /* ── PARSER: BANK ALADIN ─────────────────────────────────── */
 /*
   Struktur struk Aladin:
@@ -149,13 +198,18 @@ function parseAladin(text) {
 
   const jumlah  = extractAmount(text);
 
-  // Tanggal
-  const dateM = text.match(/tanggal[:\s]+([^\n\r]+)/i);
+  // Helper: bersihkan OCR noise dari reference number
+  const cleanRefNumber = ref => ref.replace(/[Ol]/g, '0').replace(/I/g, '1');
+
+  // Tanggal - handle OCR typo: Tanggal → anggal, Tgl, dll
+  const dateM = text.match(/[t]?anggal[:\s]+([^\n\r]+)/i) ||  // anggal atau tanggal
+                text.match(/tgl[:\s]+([^\n\r]+)/i) ||           // Tgl
+                text.match(/tanggal[:\s]+([^\n\r]+)/i);          // tanggal
   const tanggal = dateM ? dateM[1].trim() : '';
 
-  // Nomor referensi/transaksi
+  // Nomor referensi/transaksi — bersihkan OCR noise (O→0, I→1)
   const refM = text.match(/ref[:\s]+([A-Z0-9]+)/i);
-  const noTransaksi = refM ? refM[1] : '';
+  const noTransaksi = refM ? cleanRefNumber(refM[1]) : '';
 
   // Metode
   const metode = /bi[-\s]?fast/i.test(text) ? 'BI FAST' : 'BI Fast';
@@ -224,81 +278,117 @@ function parseSeaBank(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const jumlah = extractAmount(text);
 
-  // Waktu transaksi
-  const wktM = text.match(/waktu\s*transaksi[:\s]+([^\n\r]+)/i);
+  // Waktu Transaksi - handle OCR typo: Waktu → aktu, Wkt, dll
+  const wktM = text.match(/[w]?aktu\s*transaksi[:\s]+([^\n\r]+)/i) ||  // aktu atau waktu
+               text.match(/wkt\s*transaksi[:\s]+([^\n\r]+)/i) ||        // Wkt transaksi
+               text.match(/waktu\s*transaksi[:\s]+([^\n\r]+)/i);        // waktu transaksi
   const tanggal = wktM ? wktM[1].trim() : '';
 
-  // No. transaksi
-  const noM = text.match(/no\.?\s*transaksi[:\s]+([A-Z0-9]+)/i);
-  const noTransaksi = noM ? noM[1] : '';
+  // Fix No. Transaksi: tangani em-dash "—", spasi, noise D di akhir
+  // Capture long ID (26+ chars), lalu bersihkan dari non-alphanumeric
+  const noM = text.match(/no\.?\s*transaksi[:\s]*—?\s*([A-Z0-9]{15,})/i) || 
+              text.match(/no\.?\s*transaksi[:\s]*—?\s*([A-Z0-9]+)/i);
+  const noTransaksi = noM ? noM[1].replace(/[^A-Z0-9]/g, '') : '';
 
   const metode = /bi[-\s]?fast/i.test(text) ? 'BI FAST' : '';
 
-  /* ── PENGIRIM ──
-     Strategi: cari baris "SeaBank: ****6497", lalu ambil nama di baris sebelumnya.
-     Juga handle kasus "Dari NamaPengirim" inline. */
+  // Helper: bersihkan noise characters dari awal/tengah string
+  // Remove: @, ©, ®, (, ), °, #, single letter (a-z) jika di awal, numbers
+  const cleanNoise = l => {
+    let cleaned = l;
+    // 1. Remove awal: single noise char/digit + space (e.g., "9 ", "g ", "@ ")
+    cleaned = cleaned.replace(/^[^\w\s]*[\d@©®\(\)°#]\s+/i, '')
+                     .replace(/^[a-z]\s+/i, '');  // "g ", "o " etc
+    // 2. Remove tengah: @, ©, ®, (, ), °, #
+    cleaned = cleaned.replace(/[@©®\(\)°#]/g, '')
+                     .trim();
+    // 3. Final trim
+    return cleaned;
+  };
+  
+  // Improved isNoise
+  const isNoise = l => {
+    const stripped = cleanNoise(l);
+    if (!stripped || stripped.length <= 1) return true;
+    if (/^[\-—_\s@O©®°]+$/.test(l)) return true;
+    if (/^(dari|ke|seabank|bukti|transaksi|rp[\s\d]|jumlah|no\.|metode|waktu|bank jago|bank)/i.test(l)) return true;
+    if (/^(dari|ke|seabank|bukti|transaksi|rp[\s\d])/i.test(stripped)) return true;
+    if (/^\d+$/.test(stripped)) return true;
+    const noisyChars = (stripped.match(/[@D\(\)]/g) || []).length;
+    const validChars = (stripped.match(/[A-Za-z]/g) || []).length;
+    return noisyChars > validChars || validChars === 0;
+  };
+
+  // ── PENGIRIM ──
   let namaPengirim = '', rekPengirim = '';
-
-  // 1. Cari rek pengirim dari pola "SeaBank: ****XXXX"
-  const idxSBRek = lines.findIndex(l => /seabank[:\s]+[\*\d]/i.test(l));
-  if (idxSBRek >= 0) {
-    const rekM = lines[idxSBRek].match(/seabank[:\s]+([\*\d]+)/i);
-    if (rekM) rekPengirim = rekM[1];
-
-    // 2. Nama: cari mundur dari baris rek, skip baris "Dari" dan baris kosong
-    for (let i = idxSBRek - 1; i >= 0; i--) {
-      const l = lines[i];
-      if (/^dari$/i.test(l)) break; // label saja, berhenti
-      // Kalau baris mengandung "Dari Nama" inline
-      const dariInlineM = l.match(/^dari\s+(.{2,})/i);
-      if (dariInlineM) { namaPengirim = dariInlineM[1].trim(); break; }
-      // Kalau baris adalah nama (bukan label/angka/header)
-      if (l.length > 2 && !/^(seabank|dari|ke|rp\s*\d|bukti|transaksi)/i.test(l) && !/^\d+$/.test(l)) {
-        namaPengirim = l; break;
-      }
+  
+  // CHECK 1: Cari baris "Dari [nama]" inline
+  const dariLine = lines.find(l => /^dari\s+/i.test(l));
+  if (dariLine) {
+    const dariM = dariLine.match(/^dari\s+(.*?)(?:@|seabank|$)/i);
+    if (dariM) {
+      namaPengirim = cleanNoise(dariM[1]);
     }
   }
-
-  /* ── TUJUAN ──
-     Strategi: cari baris "BANK XXX SYARIAH: ****XXXX" atau "XXX BANK: ****XXXX",
-     lalu ambil nama di baris sebelumnya. */
-  let namaTujuan = '', bankTujuan = '', rekTujuan = '';
-
-  // 1. Cari baris bank tujuan — pola "BANK JAGO SYARIAH: ****7067"
-  //    atau nama bank diikuti titik dua dan rek tersensor
-  const idxBankTujuan = lines.findIndex(l =>
-    /(BANK\s+[A-Z]+(?:\s+[A-Z]+)*|[A-Z]+\s+SYARIAH)[:\s]+([\*]{2,}\d{4})/i.test(l)
-  );
-
-  if (idxBankTujuan >= 0) {
-    const bLine = lines[idxBankTujuan];
-    const bM = bLine.match(/^(BANK\s+[A-Z]+(?:\s+[A-Z]+)*|[A-Z]+(?:\s+[A-Z]+)*\s+SYARIAH|[A-Z]+\s+BANK(?:\s+[A-Z]+)?)[:\s]+([\*\d]+)/i);
-    if (bM) {
-      bankTujuan = bM[1].trim();
-      rekTujuan  = bM[2];
-    }
-
-    // 2. Nama: cari mundur dari baris bank, skip label "Ke"
-    for (let i = idxBankTujuan - 1; i >= 0; i--) {
-      const l = lines[i];
-      if (/^ke$/i.test(l)) break;
-      const keInlineM = l.match(/^ke\s+(.{2,})/i);
-      if (keInlineM) { namaTujuan = keInlineM[1].trim(); break; }
-      if (l.length > 2 && !/^(seabank|dari|ke|rp\s*\d|bukti|transaksi)/i.test(l) && !/^\d+$/.test(l) && !/[\*]{4}/.test(l)) {
-        namaTujuan = l; break;
-      }
-    }
-  }
-
-  // Fallback nama tujuan: baris setelah "Ke"
-  if (!namaTujuan) {
-    const idxKe = lines.findIndex(l => /^ke$/i.test(l));
-    if (idxKe >= 0) {
-      for (let i = idxKe + 1; i < Math.min(idxKe + 4, lines.length); i++) {
+  
+  // CHECK 2: Jika tidak ketemu inline, cari dari baris terpisah sebelum seabank rek
+  if (!namaPengirim) {
+    const idxSBRek = lines.findIndex(l => /@\s*seabank[\s:]+/i.test(l) || /seabank[\s:]+[\*@x\d\+]/i.test(l));
+    if (idxSBRek >= 0) {
+      // Nama bisa di baris sebelumnya
+      for (let i = idxSBRek - 1; i >= 0; i--) {
         const l = lines[i];
-        if (l.length > 2 && !/seabank|^(bank|rp\s*\d)/i.test(l)) { namaTujuan = l; break; }
+        if (/^dari$/i.test(l)) break;
+        if (!isNoise(l)) {
+          namaPengirim = cleanNoise(l);
+          break;
+        }
       }
     }
+  }
+  
+  // Extract rekening pengirim - tangani format "****digitshere"
+  const sbRekMatch = text.match(/@\s*seabank[\s:]+([*\d]+)/i) || 
+                     text.match(/seabank[\s:]+([*\d]+)/i);
+  if (sbRekMatch) {
+    rekPengirim = sbRekMatch[1];  // Keep as is, let sensorRek handle it
+  }
+
+  // ── TUJUAN ──
+  let namaTujuan = '', bankTujuan = '', rekTujuan = '';
+  
+  // CHECK 1: Cari baris "Ke [nama]" inline  
+  const keLine = lines.find(l => /^ke\s+/i.test(l));
+  if (keLine) {
+    const keM = keLine.match(/^ke\s+(.*?)(?:bank|jago|$)/i);
+    if (keM) {
+      namaTujuan = cleanNoise(keM[1]);
+    }
+  }
+  
+  // CHECK 2: Jika tidak ketemu inline, cari dari baris terpisah sebelum bank tujuan
+  if (!namaTujuan) {
+    const idxBankTuj = lines.findIndex(l => 
+      /[A-Z]{3,}[\s:]+[\*xX¥@\+\d]{4,}/i.test(l) && !/seabank/i.test(l)
+    );
+    if (idxBankTuj >= 0) {
+      for (let i = idxBankTuj - 1; i >= 0; i--) {
+        const l = lines[i];
+        if (/^ke$/i.test(l)) break;
+        if (!isNoise(l)) {
+          namaTujuan = cleanNoise(l);
+          break;
+        }
+      }
+    }
+  }
+  
+  // Extract bank + rekening tujuan
+  // Pattern: BANK_NAME (bisa 1-3 kata) : REKENING (angka/asterisk dengan possible noise)
+  const bankTujMatch = text.match(/([A-Z]{3,}(?:\s[A-Z]+){0,2})\s*:\s*([\*\d+]+)/i);
+  if (bankTujMatch && !/seabank/i.test(bankTujMatch[1])) {
+    bankTujuan = bankTujMatch[1].trim();
+    rekTujuan = bankTujMatch[2].replace(/\+/g, '');  // Remove + noise
   }
 
   return {
@@ -314,7 +404,6 @@ function parseSeaBank(text) {
     tanggal
   };
 }
-
 /* ── PARSER: JAGO SYARIAH ────────────────────────────────── */
 /*
   Struktur struk Jago:
@@ -325,111 +414,123 @@ function parseSeaBank(text) {
     Rp142.000
     ID Transaksi
     260301SYATIDJ100...
-    Sumber akun
+    Sumber akun  ← OPTIONAL, kadang tidak ada
     [NAMA PENGIRIM]
     Jago 5001270...
     Tanggal & waktu transaksi
     01 Mar 2026, 21:16 WIB
 
-  ROOT CAUSE lama:
-  1. Karakter "•" dibaca Tesseract sebagai "." atau "-" atau spasi → regex [•·] tidak cocok
-  2. Watermark "jago" berulang → lines[bankLineIdx - 1] sering dapat "jago" bukan nama tujuan
+  Perbaikan:
+  1. Tangani bank name typo (Mandil→Mandiri, Mandri, dll)
+  2. Handle struktur tanpa label "Sumber akun"
+  3. Cari nama pengirim di sekitar "Jago rek" line
 */
 function parseJago(text) {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  const jumlah = extractAmount(text);
+  // Bersihkan noise: watermark "jago", "syariah", karakter «, icon "FS"
+  const cleaned = text.split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 0 && !/^(jago|syariah|fs)$/i.test(l) && !/«/.test(l))
+    .join('\n');
 
-  // Tanggal
-  const idxTgl = lines.findIndex(l => /tanggal\s*&?\s*waktu/i.test(l));
-  const tanggal = idxTgl >= 0 ? (lines[idxTgl + 1] || '') : '';
+  const lines = cleaned.split('\n').filter(Boolean);
+  
+  // ── EKSTRAK NOMINAL ──
+  // Prioritas 1: gunakan extractAmount pada teks original dulu
+  let jumlah = extractAmount(text);
+  
+  // Prioritas 2 (Jago fallback): cari baris "Rp" pertama setelah header
+  if (jumlah === 0) {
+    for (const l of lines) {
+      if (/^rp/i.test(l)) {
+        const m = l.match(/^rp\s*([\d.,\s]+)/i);
+        if (m) {
+          jumlah = parseRp(m[1]);
+          if (jumlah > 0) break;
+        }
+      }
+    }
+  }
 
-  // ID Transaksi
+  // Tanggal & Waktu - strategy: cari baris yang contain tanggal format (01 Mar 2026, 21:16 WIB, dll)
+  let tanggal = '';
+  
+  // Cari baris dengan pattern tanggal: "DD MMM YYYY" atau "DD-MMM-YYYY" atau dengan jam
+  const dateLineIdx = lines.findIndex(l => 
+    /\d{1,2}\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\-)[a-z]*\s*\d{4}/i.test(l) ||
+    /\d{1,2}\/\d{1,2}\/\d{4}/i.test(l) ||  // DD/MM/YYYY
+    /\d{4}\-\d{1,2}\-\d{1,2}/i.test(l)     // YYYY-MM-DD
+  );
+  
+  if (dateLineIdx >= 0) {
+    tanggal = lines[dateLineIdx].trim();
+  }
+  
+  // Fallback: cari label "tanggal/anggal/tgl...waktu/aktu/wkt" lalu ambil baris setelahnya
+  if (!tanggal) {
+    const idxTgl = lines.findIndex(l => 
+      /([ta]nggal|tgl)[\s\-&@]*([wa]ktu|wkt|transaksi)?/i.test(l)
+    );
+    if (idxTgl >= 0 && lines[idxTgl + 1]) {
+      tanggal = lines[idxTgl + 1].trim();
+    }
+  }
+
   const idxId = lines.findIndex(l => /id\s*transaksi/i.test(l));
   const noTransaksi = idxId >= 0 ? (lines[idxId + 1] || '') : '';
 
   const metode = 'BI FAST';
 
-  /* ── TUJUAN ──
-     Cari baris yang berisi nama bank diikuti separator (•, ., -, spasi) dan nomor rekening.
-     Tesseract sering membaca "•" sebagai "." atau "- " atau bahkan menghilangkannya.
-     Pola yang ditangani: "Mandiri • 9000029...", "Mandiri. 9000029...",
-     "Mandiri - 9000029...", "Mandiri 9000029..." */
+  // ── BANK TUJUAN & REK TUJUAN ──
+  // Cari baris yang ada bank name (dengan toleransi typo)
+  // Pattern: [BANK_NAME] [separator] [NOMOR_REKENING]
+  // Bank names yang sering muncul: Mandiri, BCA, BRI, Mandil (typo), Mandri (typo), dll
   let namaTujuan = '', bankTujuan = '', rekTujuan = '';
-
-  const BANK_NAMES = /^(mandiri|bca|bri|bni|bsi|danamon|permata|cimb|btpn|ocbc|mega|bukopin)/i;
-
-  const idxBankLine = lines.findIndex(l => {
-    if (!BANK_NAMES.test(l)) return false;
-    // Ada angka di baris yang sama (rek tujuan sebagian)
-    return /\d{5,}/.test(l) ||
-      // Atau ada separator apapun setelah nama bank diikuti angka
-      /^[a-z]+\s*[•·\-\.]\s*\d/i.test(l) ||
-      // Atau nama bank + spasi + angka langsung
-      /^[a-z]+\s+\d{6,}/i.test(l);
-  });
-
-  if (idxBankLine >= 0) {
-    const bLine = lines[idxBankLine];
-
-    // Ekstrak nama bank: ambil kata sebelum separator atau angka
-    const bankM = bLine.match(/^([A-Za-z]+(?:\s+[A-Za-z]+)?)\s*[•·\-\.\s]\s*(\d+)/);
+  
+  // Helper: cek apakah string adalah bank name (dengan typo tolerance)
+  const isBankName = str => /^(mandiri|mandil|mandri|bca|bri|bni|bsi|btn|danamon|permata|cimb|mega|ocbc|bukopin)/i.test(str);
+  
+  // Cari baris yang mulai dengan bank name
+  const idxBank = lines.findIndex(l => isBankName(l));
+  if (idxBank >= 0) {
+    const bLine = lines[idxBank];
+    // Extract bank name + rekening dengan regex fleksibel
+    // Format: "[BANKNAME] [separator] [NOMOR]" atau "[BANKNAME][separator][NOMOR]"
+    // Separator: •, ·, ., -, *, =, D, ?, ~, space, atau langsung digit
+    const bankM = bLine.match(/^([A-Za-z]+(?:\s[A-Za-z]+)?)\s*[•·.\-\*=D?~\s]*\s*(\d{4,})/)  || 
+                  bLine.match(/^([A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d{4,})/);
     if (bankM) {
       bankTujuan = bankM[1].trim();
       rekTujuan  = bankM[2];
-    } else {
-      // Fallback: nama bank = semua huruf di awal baris
-      const onlyBank = bLine.match(/^([A-Za-z\s]+)/);
-      if (onlyBank) bankTujuan = onlyBank[1].trim();
     }
 
-    // Nama tujuan: cari mundur dari bank line, SKIP watermark dan noise
-    const NOISE = /^(jago|syariah|fs|mandiri|bca|bri|bni|rp\s*\d|\d+$)/i;
-    for (let i = idxBankLine - 1; i >= 0; i--) {
+    // Nama tujuan: baris sebelum bank line, skip noise & tanda baca saja
+    for (let i = idxBank - 1; i >= 0; i--) {
       const l = lines[i];
-      if (l.length < 3) continue;
-      if (NOISE.test(l)) continue;
+      if (l.length < 2 || /^[\d\s\=\-\.]+$/.test(l) || /^(id|rp|transaksi)/i.test(l)) continue;
       namaTujuan = l;
       break;
     }
   }
 
-  // Fallback nama tujuan: baris all-caps pertama setelah header (min 4 huruf)
-  if (!namaTujuan) {
-    const idxAllCaps = lines.findIndex((l, i) =>
-      i >= 1 && /^[A-Z][A-Z\s]{3,}$/.test(l) && !/^(JAGO|SYARIAH)$/.test(l)
-    );
-    if (idxAllCaps >= 0) namaTujuan = lines[idxAllCaps];
-  }
-
-  /* ── PENGIRIM ──
-     Setelah "Sumber akun": nama di baris berikutnya, rek dari baris "Jago XXXXXX".
-     Catatan: banyak baris "jago" (watermark) di sekitarnya —
-     pastikan ambil yang punya angka setelahnya. */
+  // ── NAMA PENGIRIM & REK PENGIRIM ──
   let namaPengirim = '', rekPengirim = '';
-
-  const idxSumber = lines.findIndex(l => /sumber\s*akun/i.test(l));
-  if (idxSumber >= 0) {
-    // Nama: baris setelah "Sumber akun" yang bukan rek dan bukan watermark
-    for (let i = idxSumber + 1; i < Math.min(idxSumber + 5, lines.length); i++) {
+  
+  // Cari baris "Jago [nomor]" — ini adalah rek pengirim
+  const idxJagoRek = lines.findIndex(l => /^jago\s+\d/i.test(l));
+  
+  if (idxJagoRek >= 0) {
+    // Extract rekening dari baris "Jago 500127..."
+    const jM = lines[idxJagoRek].match(/jago\s+(\d+)/i);
+    if (jM) rekPengirim = jM[1];
+    
+    // Cari nama pengirim: baris sebelum "Jago rek", skip labels & tanda baca
+    for (let i = idxJagoRek - 1; i >= 0; i--) {
       const l = lines[i];
-      // Baris rek: "Jago 5001270..."
-      if (/^jago\s+\d/i.test(l)) {
-        const jM = l.match(/jago\s+([\d]+)/i);
-        if (jM) rekPengirim = jM[1];
-        break;
-      }
-      // Skip watermark "jago" saja tanpa angka
-      if (/^jago$/i.test(l)) continue;
-      if (l.length < 3 || /^\d+$/.test(l)) continue;
-      if (!namaPengirim) namaPengirim = l;
-    }
-
-    // Kalau nama sudah dapat tapi rek belum, terus cari
-    if (!rekPengirim) {
-      for (let i = idxSumber + 1; i < Math.min(idxSumber + 8, lines.length); i++) {
-        const jM = lines[i].match(/^jago\s+([\d]{4,})/i);
-        if (jM) { rekPengirim = jM[1]; break; }
-      }
+      // Skip labels, empty, dan lines yang pure tanda baca/nomor
+      if (l.length < 2 || /^(id|jago|sumber|tanggal|waktu|rp|transaksi|mandiri|mandil)/i.test(l) || 
+          /^[\d\s\=\-\.]+$/.test(l)) continue;
+      namaPengirim = l;
+      break;
     }
   }
 
@@ -468,10 +569,12 @@ function parseStruk(text) {
    OCR
    ============================================================ */
 async function runOCR(file) {
-  setProgress(0, 'Memuat model OCR (butuh internet pertama kali)...');
+  setProgress(0, 'Memuat model OCR...');
   show('ocr-progress');
 
-  const { data: { text } } = await Tesseract.recognize(file, 'ind+eng', {
+  const processedFile = await preprocessImage(file);
+
+  const { data: { text } } = await Tesseract.recognize(processedFile, 'ind+eng', {
     logger: m => {
       if (m.status === 'loading tesseract core') setProgress(10, 'Memuat Tesseract core...');
       if (m.status === 'initializing tesseract') setProgress(20, 'Inisialisasi...');
@@ -488,6 +591,27 @@ async function runOCR(file) {
   return text;
 }
 
+function preprocessImage(file) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1400;
+      let w = img.width, h = img.height;
+      if (w > MAX || h > MAX) {
+        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+        else       { w = Math.round(w * MAX / h); h = MAX; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.filter = 'contrast(1.2)';
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.95);
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 function setProgress(pct, label) {
   const fill = document.getElementById('progress-fill');
   const txt  = document.getElementById('progress-text');
@@ -496,44 +620,77 @@ function setProgress(pct, label) {
 }
 
 /* ============================================================
+   BUILD NOTA DATA (dipakai untuk HTML preview dan Canvas JPG)
+   ============================================================ */
+function buildNotaData() {
+  if (!state.extracted) return null;
+  
+  const ext = state.extracted;
+  const fee = state.adminFee;
+  const total = ext.jumlahTransfer + fee;
+  
+  return {
+    // Header
+    title: 'NOTA TRANSFER BANK',
+    store: 'TOKO SAMORO',
+    addr1: TOKO.alamat1,
+    addr2: TOKO.alamat2,
+    waktu: ext.tanggal || buildWaktu(),  // ← Pakai tanggal dari OCR, fallback ke waktu sekarang
+    
+    // Data rows
+    rows: [
+      { lbl: 'Bank Pngrm', val: ext.bankPengirim || '-' },
+      { lbl: 'Nama Pngrm', val: ext.namaPengirim || '-' },
+      { lbl: 'Rek. Pngrm', val: ext.rekPengirim || '-' },
+      { lbl: 'Bank Tujuan', val: ext.bankTujuan || '-' },
+      { lbl: 'Nama Tujuan', val: ext.namaTujuan || '-' },
+      { lbl: 'Rek. Tujuan', val: ext.rekTujuan || '-' },
+      { lbl: 'No. Trx', val: ext.noTransaksi || '-' },
+      { lbl: 'Metode', val: ext.metode || '-' }
+    ],
+    
+    // Summary
+    jmlTransfer: fmtRp(ext.jumlahTransfer || 0),
+    adminFee: fmtRp(fee),
+    total: fmtRp(total),
+    
+    // Footer
+    wa: TOKO.wa
+  };
+}
+
+/* ============================================================
    RENDER PREVIEW THERMAL (HTML)
    ============================================================ */
 function renderPreview() {
-  const ext   = state.extracted;
-  const fee   = state.adminFee;
-  const total = ext.jumlahTransfer + fee;
-  const el    = document.getElementById('nota-preview');
+  if (!state.extracted) return;
+  
+  const nota = buildNotaData();
+  const el = document.getElementById('nota-preview');
 
-  const row = (lbl, val) =>
-    `<div class="trow"><span class="lbl">${lbl}</span><span class="val">${val || '-'}</span></div>`;
+  const row = (lbl, val, bold = false) =>
+    `<div class="trow${bold ? ' tb' : ''}"><span class="lbl">${lbl}</span><span class="val">${val || '-'}</span></div>`;
 
   el.innerHTML = `
-    <div class="tc tb">NOTA TRANSFER BANK</div>
-    <div class="tc tb">TOKO SAMORO</div>
-    <div class="tc" style="font-size:8.5px">${TOKO.alamat1}</div>
-    <div class="tc" style="font-size:8.5px">${TOKO.alamat2}</div>
+    <div class="tc tb">${nota.title}</div>
+    <div class="tc tb">${nota.store}</div>
+    <div class="tc" style="font-size:8.5px">${nota.addr1}</div>
+    <div class="tc" style="font-size:8.5px">${nota.addr2}</div>
     <div class="thr-s"></div>
-    ${row('Waktu', buildWaktu())}
+    ${row('Waktu', nota.waktu)}
     <div class="thr"></div>
-    ${row('Bank Pngrm', ext.bankPengirim)}
-    ${row('Nama Pngrm', ext.namaPengirim)}
-    ${row('Rek. Pngrm', ext.rekPengirim)}
-    ${row('Bank Tujuan', ext.bankTujuan)}
-    ${row('Nama Tujuan', ext.namaTujuan)}
-    ${row('Rek. Tujuan', ext.rekTujuan)}
-    ${row('No. Trx', ext.noTransaksi)}
-    ${row('Metode', ext.metode)}
+    ${nota.rows.map(r => row(r.lbl, r.val)).join('')}
     <div class="thr"></div>
-    <div class="trow tb">${row('Jml Transfer', fmtRp(ext.jumlahTransfer))}</div>
-    ${row('Admin Toko', fmtRp(fee))}
+    ${row('Jml Transfer', nota.jmlTransfer, true)}
+    ${row('Admin Toko', nota.adminFee)}
     <div class="thr-s"></div>
-    <div class="trow tb"><span class="lbl">TOTAL</span><span class="val">${fmtRp(total)}</span></div>
+    ${row('TOTAL', nota.total, true)}
     <div class="thr-s"></div>
-    <div class="tc" style="margin-top:4px;font-size:8px;line-height:1.7;color:#555">
-      Nota oleh Toko Samoro<br>
-      WA: ${TOKO.wa}<br>
-      Hubungi jika ada kendala
-    </div>
+<div class="tc" style="margin-top:4px;font-size:8px;line-height:1.3;color:#555">
+  <div>Nota ini dibuat oleh toko Samoro</div>
+  <div>WA: ${nota.wa}</div>
+  <div>Hubungi jika ada kendala</div>
+</div>
   `;
 }
 
@@ -541,135 +698,16 @@ function renderPreview() {
    CANVAS UNTUK JPG (57mm @ 203 DPI = ~455px; printable ~384px)
    ============================================================ */
 function drawCanvas() {
-  return new Promise(resolve => {
-    const CW  = 400;   // canvas width (px) — mewakili lebar kertas 57mm
-    const PAD = 16;    // padding kiri-kanan
-    const FS  = 21;    // font size px
-    const LH  = 30;    // line height px
-    const FONT = `'Courier New', Courier, monospace`;
-
-    const canvas = document.createElement('canvas');
-    canvas.width  = CW;
-    canvas.height = 1600; // akan di-crop
-    const ctx = canvas.getContext('2d');
-
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, CW, 1600);
-
-    let y = PAD + 6;
-
-    /* ── helpers ── */
-    const setFont = (bold = false, size = FS) => {
-      ctx.font = (bold ? 'bold ' : '') + size + 'px ' + FONT;
-      ctx.fillStyle = '#000';
-    };
-
-    const center = (text, bold = false, size = FS) => {
-      setFont(bold, size);
-      ctx.textAlign = 'center';
-      ctx.fillText(text, CW / 2, y);
-      y += LH;
-    };
-
-    const hr = (dashed = false, gap = 6) => {
-      ctx.beginPath();
-      ctx.strokeStyle = '#000';
-      ctx.lineWidth   = 1;
-      ctx.setLineDash(dashed ? [4, 4] : []);
-      ctx.moveTo(PAD, y);
-      ctx.lineTo(CW - PAD, y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      y += gap;
-    };
-
-    /* Baris dua kolom: label kiri, nilai kanan (wrap nilai jika panjang) */
-    const row = (lbl, val, bold = false) => {
-      setFont(false, FS);
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#555';
-      ctx.fillText(lbl, PAD, y);
-      ctx.fillStyle = '#000';
-      ctx.textAlign = 'right';
-
-      // Hitung max chars per baris untuk nilai
-      const valStr = String(val || '-');
-      const maxW   = CW - PAD * 2 - ctx.measureText(lbl).width - 8;
-      // Jika muat satu baris
-      setFont(bold, FS);
-      if (ctx.measureText(valStr).width <= maxW) {
-        ctx.fillText(valStr, CW - PAD, y);
-        y += LH;
-      } else {
-        // Wrap setiap ~16 karakter
-        const chunks = valStr.match(/.{1,16}/g) || [valStr];
-        chunks.forEach((chunk, i) => {
-          if (i === 0) {
-            ctx.fillText(chunk, CW - PAD, y);
-          } else {
-            ctx.textAlign = 'right';
-            ctx.fillText(chunk, CW - PAD, y);
-          }
-          y += LH;
-        });
-      }
-    };
-
-    /* ── Konten nota ── */
-    const ext   = state.extracted;
-    const fee   = state.adminFee;
-    const total = ext.jumlahTransfer + fee;
-
-    center('NOTA TRANSFER BANK', true);
-    center('TOKO SAMORO', true);
-    center(TOKO.alamat1, false, FS - 2);
-    center(TOKO.alamat2, false, FS - 2);
-    y += 4; hr(false);
-
-    row('Waktu', buildWaktu());
-    hr(true);
-
-    row('Bank Pngrm', ext.bankPengirim);
-    row('Nama Pngrm', ext.namaPengirim);
-    row('Rek. Pngrm', ext.rekPengirim);
-    row('Bank Tujuan', ext.bankTujuan);
-    row('Nama Tujuan', ext.namaTujuan);
-    row('Rek. Tujuan', ext.rekTujuan);
-    row('No. Trx', ext.noTransaksi);
-    row('Metode', ext.metode);
-    hr(true);
-
-    row('Jml Transfer', fmtRp(ext.jumlahTransfer), true);
-    row('Admin Toko',   fmtRp(fee));
-    y += 4; hr(false);
-
-    row('TOTAL TAGIHAN', fmtRp(total), true);
-    y += 4; hr(false);
-
-    // Footer
-    const footLines = [
-      'Nota oleh Toko Samoro,',
-      'Hubungi WA: ' + TOKO.wa,
-      'jika ada kendala transaksi.'
-    ];
-    setFont(false, FS - 3);
-    ctx.fillStyle  = '#666';
-    ctx.textAlign  = 'center';
-    footLines.forEach(f => { ctx.fillText(f, CW / 2, y); y += LH - 4; });
-    y += PAD;
-
-    // Crop ke tinggi aktual
-    const out = document.createElement('canvas');
-    out.width  = CW;
-    out.height = y;
-    const octx = out.getContext('2d');
-    octx.fillStyle = '#fff';
-    octx.fillRect(0, 0, CW, y);
-    octx.drawImage(canvas, 0, 0);
-    resolve(out);
+  return new Promise((resolve, reject) => {
+    const notaEl = document.getElementById('nota-preview');
+    html2canvas(notaEl, {
+      scale: 3,          // resolusi tinggi biar tidak blur saat print
+      backgroundColor: '#ffffff',
+      useCORS: true
+    }).then(canvas => resolve(canvas))
+      .catch(err => reject(err));
   });
 }
-
 /* ============================================================
    STORAGE (localStorage)
    ============================================================ */
@@ -694,18 +732,18 @@ function deleteFromHistory(idx) {
    RENDER HISTORY
    ============================================================ */
 function renderHistory() {
-  const all    = getHistory();
-  const list   = document.getElementById('history-list');
-  const empty  = document.getElementById('history-empty');
+  const all   = getHistory();
+  const list  = document.getElementById('history-list');
+  const empty = document.getElementById('history-empty');
   document.getElementById('history-count').textContent = all.length;
 
   if (!all.length) {
     list.innerHTML = '';
-    show('history-empty');
+    empty.classList.remove('hidden');
     return;
   }
-  hide('history-empty');
 
+  empty.classList.add('hidden');
   list.innerHTML = all.map((item, i) => `
     <div class="history-item">
       <div class="history-info">
@@ -714,18 +752,65 @@ function renderHistory() {
         <div class="h-meta">${item.namaPengirim || ''} · ${fmtHistDate(item.createdAt)}</div>
         <div class="h-breakdown">Transfer: ${fmtRp(item.jumlahTransfer)} + Admin: ${fmtRp(item.adminFee)}</div>
       </div>
-      <button class="btn-hapus" onclick="hapusHistory(${i})">Hapus</button>
+      <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+        <button class="btn-hapus" onclick="lihatHistory(${i})">Lihat</button>
+        <button class="btn-hapus" onclick="hapusHistory(${i})">Hapus</button>
+      </div>
     </div>
   `).join('');
 }
-
 /** Exposed ke inline onclick di history */
 window.hapusHistory = function(idx) {
   if (!confirm('Hapus riwayat ini?')) return;
   deleteFromHistory(idx);
   renderHistory();
 };
+window.lihatHistory = function(idx) {
+  const item = getHistory()[idx];
+  if (!item) return;
+  // Restore ke state lalu pindah ke tab generate untuk lihat preview
+  state.extracted = {
+    bankPengirim:   item.bankPengirim,
+    namaPengirim:   item.namaPengirim,
+    rekPengirim:    item.rekPengirim,
+    bankTujuan:     item.bankTujuan,
+    namaTujuan:     item.namaTujuan,
+    rekTujuan:      item.rekTujuan,
+    noTransaksi:    item.noTransaksi,
+    metode:         item.metode,
+    jumlahTransfer: item.jumlahTransfer,
+    tanggal:        item.tanggal || ''
+  };
+  state.adminFee = item.adminFee;
 
+  // Pindah ke tab Buat Nota
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelector('[data-tab="generate"]').classList.add('active');
+  el('tab-generate').classList.add('active');
+
+  // Update UI
+  el('nominal-input').value = item.jumlahTransfer;
+  el('admin-input').value   = item.adminFee;
+  el('total-display').textContent = fmtRp(item.total);
+  el('admin-hint').textContent = `Riwayat · nominal ${fmtRp(item.jumlahTransfer)}`;
+
+  // Populate edit fields jika ada
+  el('edit-bank-pengirim').value = item.bankPengirim || '';
+  el('edit-nama-pengirim').value = item.namaPengirim || '';
+  el('edit-rek-pengirim').value  = item.rekPengirim  || '';
+  el('edit-bank-tujuan').value   = item.bankTujuan   || '';
+  el('edit-nama-tujuan').value   = item.namaTujuan   || '';
+  el('edit-rek-tujuan').value    = item.rekTujuan    || '';
+  el('edit-waktu').value         = item.tanggal      || '';
+
+  show('card-admin');
+  renderPreview();
+  show('card-preview');
+
+  // Scroll ke preview
+  el('card-preview').scrollIntoView({ behavior: 'smooth' });
+};
 /* ============================================================
    DOM HELPERS
    ============================================================ */
@@ -799,12 +884,36 @@ document.addEventListener('DOMContentLoaded', () => {
       state.extracted = parseStruk(text);
       state.adminFee  = calcAdmin(state.extracted.jumlahTransfer);
 
+      // ⚠️ Jika nominal gagal terbaca (0), minta user input manual
+      if (state.extracted.jumlahTransfer === 0) {
+        const manualInput = prompt('⚠️ Sistem tidak bisa membaca nominal transfer dari foto.\n\nSilakan input nominal transfer secara manual (contoh: 142000):');
+        if (manualInput) {
+          const parsed = parseRp(manualInput);
+          if (parsed > 0) {
+            state.extracted.jumlahTransfer = parsed;
+            state.adminFee = calcAdmin(parsed);
+          }
+        }
+      }
+
+      // Set nominal input field dengan hasil OCR / manual input
+      el('nominal-input').value = state.extracted.jumlahTransfer;
+
       // Update UI admin
       const auto = calcAdmin(state.extracted.jumlahTransfer);
       el('admin-hint').textContent =
         `Kalkulasi otomatis: ${fmtRp(auto)} untuk nominal ${fmtRp(state.extracted.jumlahTransfer)}`;
       el('admin-input').value = state.adminFee;
       updateTotal();
+
+      // ── POPULATE EDIT FORM dengan data OCR ──
+      el('edit-bank-pengirim').value = state.extracted.bankPengirim || '';
+      el('edit-nama-pengirim').value = state.extracted.namaPengirim || '';
+      el('edit-rek-pengirim').value = state.extracted.rekPengirim || '';
+      el('edit-bank-tujuan').value = state.extracted.bankTujuan || '';
+      el('edit-nama-tujuan').value = state.extracted.namaTujuan || '';
+      el('edit-rek-tujuan').value = state.extracted.rekTujuan || '';
+      el('edit-waktu').value = state.extracted.tanggal || '';
 
       show('card-admin');
       renderPreview();
@@ -827,7 +936,17 @@ document.addEventListener('DOMContentLoaded', () => {
     el('toggle-debug').textContent = (isHidden ? '▼' : '▶') + ' Teks OCR mentah (klik untuk lihat/sembunyikan)';
   });
 
-  /* ── ADMIN FEE ── */
+  /* ── ADMIN FEE & NOMINAL ── */
+  el('nominal-input').addEventListener('input', e => {
+    if (!state.extracted) return;
+    const nominal = Number(e.target.value) || 0;
+    state.extracted.jumlahTransfer = nominal;
+    state.adminFee = calcAdmin(nominal);
+    el('admin-input').value = state.adminFee;
+    updateTotal();
+    renderPreview();
+  });
+
   el('admin-input').addEventListener('input', e => {
     state.adminFee = Number(e.target.value) || 0;
     updateTotal();
@@ -844,14 +963,58 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateTotal() {
     const total = state.extracted
-      ? state.extracted.jumlahTransfer + state.adminFee
+      ? (state.extracted.jumlahTransfer || 0) + state.adminFee
       : 0;
     el('total-display').textContent = fmtRp(total);
   }
 
+  /* ── TOGGLE EDIT DATA ── */
+  el('btn-toggle-edit').addEventListener('click', () => {
+    const content = el('edit-content');
+    const btn = el('btn-toggle-edit');
+    const isHidden = content.classList.contains('hidden');
+    content.classList.toggle('hidden', !isHidden);
+    btn.textContent = (isHidden ? '▼' : '▶') + ' Koreksi Data Bank (jika OCR salah)';
+  });
+
+  /* ── EDIT FORM LISTENERS ── */
+  const editFields = [
+    'edit-bank-pengirim',
+    'edit-nama-pengirim', 
+    'edit-rek-pengirim',
+    'edit-bank-tujuan',
+    'edit-nama-tujuan',
+    'edit-rek-tujuan',
+    'edit-waktu'
+  ];
+
+  editFields.forEach(fieldId => {
+    el(fieldId).addEventListener('input', e => {
+      if (!state.extracted) return;
+      
+      // Map field ID ke property di state.extracted
+      const fieldMap = {
+        'edit-bank-pengirim':  'bankPengirim',
+        'edit-nama-pengirim':  'namaPengirim',
+        'edit-rek-pengirim':   'rekPengirim',
+        'edit-bank-tujuan':    'bankTujuan',
+        'edit-nama-tujuan':    'namaTujuan',
+        'edit-rek-tujuan':     'rekTujuan',
+        'edit-waktu':          'tanggal'
+      };
+      
+      const propName = fieldMap[fieldId];
+      state.extracted[propName] = e.target.value || '';
+      renderPreview();
+    });
+  });
+
   /* ── DOWNLOAD ── */
   el('btn-download').addEventListener('click', async () => {
-    if (!state.extracted) return;
+    if (!state.extracted) {
+      alert('Tidak ada data untuk diunduh. Baca struk terlebih dahulu.');
+      return;
+    }
 
     const btn = el('btn-download');
     btn.disabled = true;
@@ -859,6 +1022,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       const canvas = await drawCanvas();
+      if (!canvas) {
+        alert('Gagal membuat canvas nota');
+        btn.disabled = false;
+        btn.textContent = 'Download Nota (JPG) & Simpan Riwayat';
+        return;
+      }
+
       const url    = canvas.toDataURL('image/jpeg', 0.95);
       const a      = document.createElement('a');
       a.href        = url;
@@ -869,7 +1039,7 @@ document.addEventListener('DOMContentLoaded', () => {
       saveToHistory({
         ...state.extracted,
         adminFee:  state.adminFee,
-        total:     state.extracted.jumlahTransfer + state.adminFee,
+        total:     (state.extracted.jumlahTransfer || 0) + state.adminFee,
         createdAt: Date.now()
       });
       document.getElementById('history-count').textContent = getHistory().length;

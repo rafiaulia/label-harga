@@ -236,7 +236,59 @@ pre#ocr-raw {
 }
 .total-bar strong { font-size: 15px; color: #1e3a5f; }
 
-/* ── THERMAL PREVIEW ── */
+/* ── EDIT DATA SECTION ── */
+.edit-section {
+  margin-top: 18px;
+  border-top: 1px solid #ddd;
+  padding-top: 14px;
+}
+
+.btn-toggle-edit {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #4b5563;
+  cursor: pointer;
+  text-align: left;
+  transition: background .15s;
+}
+
+.btn-toggle-edit:hover { background: #e5e7eb; }
+
+.edit-content {
+  margin-top: 12px;
+  padding: 13px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+@media (max-width: 480px) {
+  .edit-grid { grid-template-columns: 1fr; }
+}
+
+.field-wrap input[type="text"] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+}
+
+.field-wrap input[type="text"]:focus { border-color: #1e3a5f; }
 .thermal-wrapper {
   display: flex;
   justify-content: center;
